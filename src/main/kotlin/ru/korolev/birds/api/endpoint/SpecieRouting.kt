@@ -20,48 +20,57 @@ fun Routing.specie() {
         post("/") {
             val createRequest = call.receive<SpecieCreateRequest>()
 
-            resolveResult(specieService.create(createRequest))
+            val createResult = specieService.createSpecie(createRequest)
+            respond(createResult)
         }
 
         get("/{id}") {
-            val id = call.parameters["id"] ?: return@get idNotSpecified()
+            val id = call.parameters["id"]?.toInt() ?: return@get respondIdNotSpecified()
 
-            resolveResult(specieService.findById(id))
+            val findResult = specieService.findSpecie(id)
+            respond(findResult)
+        }
+
+        get("/") {
+            val findAllResult = specieService.getAllSpecies()
+            respond(findAllResult)
         }
 
         delete("/{id}") {
-            val id = call.parameters["id"] ?: return@delete idNotSpecified()
+            val id = call.parameters["id"]?.toInt() ?: return@delete respondIdNotSpecified()
 
-            resolveResult(specieService.delete(id))
+            val deleteResult = specieService.deleteSpecie(id)
+            respond(deleteResult)
         }
 
         patch("/{id}") {
-            val id = call.parameters["id"] ?: return@patch idNotSpecified()
+            val id = call.parameters["id"]?.toInt() ?: return@patch respondIdNotSpecified()
             val specieEdit = call.receive<SpecieEditRequest>()
 
-            resolveResult(specieService.updateName(id, specieEdit))
+            val editResult = specieService.updateSpecieName(id, specieEdit)
+            respond(editResult)
         }
     }
 }
 
-private suspend fun PipelineContext<Unit, ApplicationCall>.resolveResult(result: LadenStatus<out Any>) {
+private suspend fun PipelineContext<Unit, ApplicationCall>.respond(result: LadenStatus<out Any>) {
     if (result.isFailed())
-        badRequest(result.getMessage())
+        respondFail(result.getMessage())
     else
-        okRequest(result.getBurden())
+        respondOk(result.getBurden())
 }
 
-private suspend fun PipelineContext<Unit, ApplicationCall>.idNotSpecified() = call.respondText(
-    text = "you need to specify id",
-    status = HttpStatusCode.BadRequest
-)
-
-private suspend fun PipelineContext<Unit, ApplicationCall>.badRequest(message: String) = call.respondText(
-    text = message,
-    status = HttpStatusCode.BadRequest
-)
-
-private suspend fun PipelineContext<Unit, ApplicationCall>.okRequest(burden: Any) = call.respond(
+private suspend fun PipelineContext<Unit, ApplicationCall>.respondOk(burden: Any) = call.respond(
     message = burden,
     status = HttpStatusCode.OK
+)
+
+private suspend fun PipelineContext<Unit, ApplicationCall>.respondFail(message: String) = call.respondText(
+    text = message,
+    status = HttpStatusCode.BadRequest //todo change
+)
+
+private suspend fun PipelineContext<Unit, ApplicationCall>.respondIdNotSpecified() = call.respondText(
+    text = "You need to specify id",
+    status = HttpStatusCode.BadRequest
 )

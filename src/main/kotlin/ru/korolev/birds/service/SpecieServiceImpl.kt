@@ -1,60 +1,90 @@
 package ru.korolev.birds.service
 
+import org.jetbrains.exposed.exceptions.ExposedSQLException
+import org.jetbrains.exposed.sql.*
+import org.jetbrains.exposed.sql.transactions.transaction
 import ru.korolev.birds.api.service.SpecieService
-import ru.korolev.birds.database.SessionFactory
-import ru.korolev.birds.database.mapper.SpecieMapper
-import ru.korolev.birds.entity.Specie
+import ru.korolev.birds.database.Species
 import ru.korolev.birds.entity.dto.request.SpecieCreateRequest
 import ru.korolev.birds.entity.dto.request.SpecieEditRequest
+import ru.korolev.birds.entity.dto.response.SpecieResponse
 import ru.korolev.birds.util.LadenStatus
-import java.util.*
 
-class SpecieServiceImpl(sessionFactory: SessionFactory) : SpecieService, AbstractService(sessionFactory) {
+class SpecieServiceImpl : SpecieService {
 
-    override fun create(createRequest: SpecieCreateRequest): LadenStatus<Specie> =
-        sessionFactory.openSession().use {
-            return try {
-                val id = UUID.randomUUID().toString()
-                val specie = Specie(id, createRequest.name)
-                it.getMapper(SpecieMapper::class.java).save(specie)
-                LadenStatus.ok(specie)
-            } catch (e: RuntimeException) {
-                LadenStatus.fail("Failed to create entity cause ${e.message}")
+    override fun createSpecie(createRequest: SpecieCreateRequest): LadenStatus<Int> {
+        val id = try {
+            transaction {
+                Species.insertAndGetId {
+                    it[name] = createRequest.name
+                }.value
             }
+        } catch (e: ExposedSQLException) {
+            return LadenStatus.fail("Failed to create entity cause ${e.message}")
         }
+        return LadenStatus.ok(id)
+    }
 
-    override fun findById(id: String): LadenStatus<Specie> =
-        sessionFactory.openSession().use {
-            val specie = it.getMapper(SpecieMapper::class.java).findById(id)
-            return if (specie != null)
-                LadenStatus.ok(specie)
-            else
-                LadenStatus.fail("Couldn't find specie with specified id: $id")
+    override fun findSpecie(id: Int): LadenStatus<SpecieResponse> {
+        val specie = transaction {
+            Species.select { Species.id eq id }
+                .map {
+                    SpecieResponse(
+                        it[Species.id].value,
+                        it[Species.name]
+                    )
+                }.firstOrNull()
         }
+        return if (specie != null)
+            LadenStatus.ok(specie)
+        else
+            LadenStatus.fail("Couldn't find specie with specified id: $id")
+    }
 
-    override fun delete(id: String): LadenStatus<String> =
-        sessionFactory.openSession().use {
-            return try {
-                it.getMapper(SpecieMapper::class.java).delete(id)
-                LadenStatus.ok(id)
-            } catch (e: RuntimeException) {
-                LadenStatus.fail("Failed to delete entity cause ${e.message}")
+    override fun getAllSpecies(): LadenStatus<List<SpecieResponse>> {
+        val specieList = transaction {
+            Species.selectAll()
+                .map {
+                    SpecieResponse(
+                        it[Species.id].value,
+                        it[Species.name]
+                    )
+                }
+        }
+        return LadenStatus.ok(specieList)
+    }
+
+    override fun deleteSpecie(id: Int): LadenStatus<Int> {
+        val deletedRows = try {
+            transaction {
+                Species.deleteWhere {
+                    Species.id eq id
+                }
             }
+        } catch (e: ExposedSQLException) {
+            return LadenStatus.fail("Failed to delete entity cause ${e.message}")
         }
+        return when (deletedRows) {
+            1 -> LadenStatus.ok(id)
+            0 -> LadenStatus.fail("Couldn't find specie with specified id: $id")
+            else -> LadenStatus.fail("What the fuck just happened")
+        }
+    }
 
-    override fun updateName(id: String, editRequest: SpecieEditRequest): LadenStatus<Specie> =
-        sessionFactory.openSession().use {
-            return try {
-                val mapper = it.getMapper(SpecieMapper::class.java)
-                val specie =
-                    mapper.findById(id) ?: return LadenStatus.fail("Couldn't find specie with specified id: $id")
-
-                specie.name = editRequest.name
-                mapper.update(specie)
-
-                LadenStatus.ok(specie)
-            } catch (e: RuntimeException) {
-                LadenStatus.fail("Failed to update entity cause ${e.message}")
+    override fun updateSpecieName(id: Int, editRequest: SpecieEditRequest): LadenStatus<Int> {
+        val updatedRows = try {
+            transaction {
+                Species.update({ Species.id eq id }) {
+                    it[name] = editRequest.name
+                }
             }
+        } catch (e: ExposedSQLException) {
+            return LadenStatus.fail("Failed to update entity cause ${e.message}")
         }
+        return when (updatedRows) {
+            1 -> LadenStatus.ok(id)
+            0 -> LadenStatus.fail("Couldn't find specie with specified id: $id")
+            else -> LadenStatus.fail("What the fuck just happened")
+        }
+    }
 }
